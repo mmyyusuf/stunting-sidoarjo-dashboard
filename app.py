@@ -6,8 +6,6 @@ from folium import Choropleth
 from streamlit_folium import st_folium
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import numpy as np
 
 # ==================== PAGE CONFIG ====================
 st.set_page_config(
@@ -277,231 +275,6 @@ def create_pie_chart(merged_gdf):
     
     return fig
 
-# ==================== NEW ADVANCED VISUALIZATIONS ====================
-
-def create_gauge_chart(avg_percent):
-    """Create gauge chart for average stunting percentage"""
-    
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number+delta",
-        value=avg_percent,
-        domain={'x': [0, 1], 'y': [0, 1]},
-        title={'text': "Rata-rata Stunting Kabupaten", 'font': {'size': 24}},
-        delta={'reference': 20, 'suffix': "%"},
-        gauge={
-            'axis': {'range': [None, 50], 'tickwidth': 1, 'tickcolor': "darkblue"},
-            'bar': {'color': "darkblue"},
-            'bgcolor': "white",
-            'borderwidth': 2,
-            'bordercolor': "gray",
-            'steps': [
-                {'range': [0, 20], 'color': '#22c55e'},
-                {'range': [20, 30], 'color': '#eab308'},
-                {'range': [30, 50], 'color': '#ef4444'}
-            ],
-            'threshold': {
-                'line': {'color': "red", 'width': 4},
-                'thickness': 0.75,
-                'value': 30
-            }
-        }
-    ))
-    
-    fig.update_layout(
-        height=400,
-        margin=dict(l=20, r=20, t=80, b=20),
-        paper_bgcolor='rgba(0,0,0,0)',
-        font={'color': "darkblue", 'family': "Arial"}
-    )
-    
-    return fig
-
-def create_scatter_bubble(merged_gdf):
-    """Create scatter plot with bubble size"""
-    
-    data_with_data = merged_gdf[merged_gdf["mean_stunting_percent"] > 0].copy()
-    
-    fig = go.Figure()
-    
-    fig.add_trace(go.Scatter(
-        x=data_with_data["jumlah_balita"],
-        y=data_with_data["mean_stunting_percent"],
-        mode='markers+text',
-        marker=dict(
-            size=data_with_data["jumlah_stunting"]*2,
-            color=data_with_data["mean_stunting_percent"],
-            colorscale='RdYlGn_r',
-            showscale=True,
-            colorbar=dict(title="% Stunting"),
-            line=dict(width=2, color='white'),
-            opacity=0.8
-        ),
-        text=data_with_data["WADMKC"],
-        textposition="top center",
-        textfont=dict(size=10),
-        hovertemplate='<b>%{text}</b><br>' +
-                      'Jumlah Balita: %{x}<br>' +
-                      'Persentase Stunting: %{y:.2f}%<br>' +
-                      '<extra></extra>'
-    ))
-    
-    fig.update_layout(
-        title="Analisis Korelasi: Jumlah Balita vs Persentase Stunting",
-        xaxis_title="Jumlah Balita",
-        yaxis_title="Persentase Stunting (%)",
-        height=500,
-        hovermode='closest',
-        plot_bgcolor='rgba(240,240,240,0.5)',
-        paper_bgcolor='rgba(0,0,0,0)'
-    )
-    
-    # Add reference lines
-    fig.add_hline(y=20, line_dash="dash", line_color="green", opacity=0.5, 
-                  annotation_text="Batas Rendah (20%)")
-    fig.add_hline(y=30, line_dash="dash", line_color="red", opacity=0.5,
-                  annotation_text="Batas Tinggi (30%)")
-    
-    return fig
-
-def create_treemap(merged_gdf):
-    """Create treemap visualization"""
-    
-    data_with_data = merged_gdf[merged_gdf["mean_stunting_percent"] > 0].copy()
-    
-    # Add labels with percentage
-    data_with_data["label"] = data_with_data.apply(
-        lambda row: f"{row['WADMKC']}<br>{row['mean_stunting_percent']:.1f}%", 
-        axis=1
-    )
-    
-    fig = go.Figure(go.Treemap(
-        labels=data_with_data["label"],
-        parents=["Sidoarjo"] * len(data_with_data),
-        values=data_with_data["jumlah_balita"],
-        marker=dict(
-            colors=data_with_data["mean_stunting_percent"],
-            colorscale='RdYlGn_r',
-            showscale=True,
-            colorbar=dict(title="% Stunting"),
-            line=dict(width=2, color='white')
-        ),
-        text=data_with_data["jumlah_stunting"].apply(lambda x: f"{int(x)} kasus"),
-        textposition="middle center",
-        hovertemplate='<b>%{label}</b><br>' +
-                      'Jumlah Balita: %{value}<br>' +
-                      'Kasus: %{text}<br>' +
-                      '<extra></extra>'
-    ))
-    
-    fig.update_layout(
-        title="Proporsi Balita per Kecamatan (Ukuran = Jumlah Balita, Warna = % Stunting)",
-        height=500,
-        margin=dict(l=10, r=10, t=50, b=10)
-    )
-    
-    return fig
-
-def create_radar_chart(merged_gdf):
-    """Create radar chart comparing top kecamatan"""
-    
-    # Get top 6 kecamatan with highest percentage
-    top_kec = merged_gdf[merged_gdf["mean_stunting_percent"] > 0].nlargest(6, "mean_stunting_percent")
-    
-    # Normalize values for radar chart (0-100 scale)
-    categories = ['Persentase<br>Stunting', 'Jumlah<br>Kasus', 'Jumlah<br>Balita']
-    
-    fig = go.Figure()
-    
-    for _, row in top_kec.iterrows():
-        # Normalize to 0-100 scale
-        percent_norm = row["mean_stunting_percent"] * 2  # scale to max 100
-        kasus_norm = (row["jumlah_stunting"] / top_kec["jumlah_stunting"].max()) * 100
-        balita_norm = (row["jumlah_balita"] / top_kec["jumlah_balita"].max()) * 100
-        
-        fig.add_trace(go.Scatterpolar(
-            r=[percent_norm, kasus_norm, balita_norm],
-            theta=categories,
-            fill='toself',
-            name=row["WADMKC"],
-            hovertemplate='<b>%{fullData.name}</b><br>' +
-                          '%{theta}: %{r:.1f}<br>' +
-                          '<extra></extra>'
-        ))
-    
-    fig.update_layout(
-        polar=dict(
-            radialaxis=dict(
-                visible=True,
-                range=[0, 100],
-                showticklabels=True,
-                ticks='outside'
-            )
-        ),
-        title="Perbandingan Multi-Dimensi: Top 6 Kecamatan",
-        height=500,
-        showlegend=True,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=-0.2,
-            xanchor="center",
-            x=0.5
-        )
-    )
-    
-    return fig
-
-def create_box_plot(merged_gdf):
-    """Create box plot for distribution analysis"""
-    
-    data_with_data = merged_gdf[merged_gdf["mean_stunting_percent"] > 0]
-    
-    fig = go.Figure()
-    
-    # Box plot for percentage distribution
-    fig.add_trace(go.Box(
-        y=data_with_data["mean_stunting_percent"],
-        name="Persentase Stunting",
-        marker_color='#6366f1',
-        boxmean='sd',
-        text=data_with_data["WADMKC"],
-        hovertemplate='<b>%{text}</b><br>' +
-                      'Persentase: %{y:.2f}%<br>' +
-                      '<extra></extra>'
-    ))
-    
-    fig.update_layout(
-        title="Distribusi Statistik Persentase Stunting",
-        yaxis_title="Persentase Stunting (%)",
-        height=500,
-        showlegend=False,
-        plot_bgcolor='rgba(240,240,240,0.5)',
-        paper_bgcolor='rgba(0,0,0,0)'
-    )
-    
-    # Add reference lines
-    fig.add_hline(y=20, line_dash="dash", line_color="green", opacity=0.5,
-                  annotation_text="Batas Rendah (20%)", annotation_position="right")
-    fig.add_hline(y=30, line_dash="dash", line_color="red", opacity=0.5,
-                  annotation_text="Batas Tinggi (30%)", annotation_position="right")
-    
-    # Calculate and display statistics
-    mean_val = data_with_data["mean_stunting_percent"].mean()
-    median_val = data_with_data["mean_stunting_percent"].median()
-    
-    fig.add_annotation(
-        text=f"Mean: {mean_val:.2f}%<br>Median: {median_val:.2f}%",
-        xref="paper", yref="paper",
-        x=0.02, y=0.98,
-        showarrow=False,
-        bgcolor="white",
-        bordercolor="gray",
-        borderwidth=1,
-        font=dict(size=12)
-    )
-    
-    return fig
-
 # ==================== MAIN APP ====================
 def main():
     # Header
@@ -544,11 +317,7 @@ def main():
         )
     
     with col4:
-        data_with_categories = merged_gdf[merged_gdf["mean_stunting_percent"] > 0]
-        if len(data_with_categories) > 0:
-            kategori_tertinggi = data_with_categories["category"].value_counts().idxmax()
-        else:
-            kategori_tertinggi = "N/A"
+        kategori_tertinggi = merged_gdf[merged_gdf["mean_stunting_percent"] > 0]["category"].value_counts().idxmax()
         st.metric(
             label="🏷️ Kategori Dominan",
             value=kategori_tertinggi
@@ -606,16 +375,8 @@ def main():
                 """, unsafe_allow_html=True)
     
     with tab2:
-        st.subheader("📊 Analisis Data Stunting Komprehensif")
+        st.subheader("Analisis Data Stunting")
         
-        # Row 1: Gauge Chart (Full Width)
-        st.markdown("### 🎯 Indikator Rata-rata Kabupaten")
-        st.plotly_chart(create_gauge_chart(avg_percent), use_container_width=True)
-        
-        st.markdown("---")
-        
-        # Row 2: Bar Chart + Pie Chart
-        st.markdown("### 📈 Distribusi Dasar")
         col_chart1, col_chart2 = st.columns(2)
         
         with col_chart1:
@@ -623,30 +384,6 @@ def main():
         
         with col_chart2:
             st.plotly_chart(create_pie_chart(merged_gdf), use_container_width=True)
-        
-        st.markdown("---")
-        
-        # Row 3: Scatter Bubble + Treemap
-        st.markdown("### 🔍 Analisis Korelasi & Proporsi")
-        col_chart3, col_chart4 = st.columns(2)
-        
-        with col_chart3:
-            st.plotly_chart(create_scatter_bubble(merged_gdf), use_container_width=True)
-        
-        with col_chart4:
-            st.plotly_chart(create_treemap(merged_gdf), use_container_width=True)
-        
-        st.markdown("---")
-        
-        # Row 4: Radar Chart + Box Plot
-        st.markdown("### 📊 Analisis Komparatif & Statistik")
-        col_chart5, col_chart6 = st.columns(2)
-        
-        with col_chart5:
-            st.plotly_chart(create_radar_chart(merged_gdf), use_container_width=True)
-        
-        with col_chart6:
-            st.plotly_chart(create_box_plot(merged_gdf), use_container_width=True)
         
         st.markdown("---")
         
@@ -681,3 +418,47 @@ def main():
                     st.markdown(f"- {kec}")
             else:
                 st.success("✅ Semua kecamatan memiliki data!")
+    
+    with tab3:
+        st.subheader("Data Lengkap per Kecamatan")
+        
+        # Prepare display data
+        display_df = merged_gdf[["WADMKC", "jumlah_balita", "jumlah_stunting", "mean_stunting_percent", "category", "rank"]].copy()
+        display_df.columns = ["Kecamatan", "Jumlah Balita", "Jumlah Stunting", "Persentase (%)", "Kategori", "Ranking"]
+        display_df = display_df.sort_values("Persentase (%)", ascending=False).reset_index(drop=True)
+        
+        # Format display
+        display_df["Jumlah Balita"] = display_df["Jumlah Balita"].astype(int)
+        display_df["Jumlah Stunting"] = display_df["Jumlah Stunting"].astype(int)
+        display_df["Ranking"] = display_df["Ranking"].astype(int)
+        display_df["Ranking"] = display_df["Ranking"].apply(lambda x: f"#{x}" if x > 0 else "-")
+        
+        st.dataframe(
+            display_df,
+            hide_index=True,
+            use_container_width=True,
+            height=600
+        )
+        
+        # Download button
+        csv = display_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Data CSV",
+            data=csv,
+            file_name="data_stunting_sidoarjo.csv",
+            mime="text/csv"
+        )
+    
+    # Footer
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align: center; color: #64748b; padding: 1rem;'>"
+        "© 2025 Sistem Informasi Stunting Kabupaten Sidoarjo | "
+        "Data visualisasi untuk monitoring kesehatan balita"
+        "</div>",
+        unsafe_allow_html=True
+    )
+
+if __name__ == "__main__":
+
+    main()
