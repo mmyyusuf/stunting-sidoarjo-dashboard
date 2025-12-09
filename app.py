@@ -32,6 +32,35 @@ st.markdown("""
         color: #6366f1;
         margin-bottom: 2rem;
     }
+    .insight-box {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1.5rem;
+        border-radius: 1rem;
+        margin: 1rem 0;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .anomaly-box {
+        background: #fee2e2;
+        border-left: 4px solid #ef4444;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin: 0.5rem 0;
+    }
+    .recommendation-box {
+        background: #dbeafe;
+        border-left: 4px solid #3b82f6;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin: 0.5rem 0;
+    }
+    .success-box {
+        background: #dcfce7;
+        border-left: 4px solid #22c55e;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin: 0.5rem 0;
+    }
     .stTabs [data-baseweb="tab-list"] {
         gap: 2rem;
     }
@@ -53,7 +82,6 @@ def load_data():
         return df, gdf
     except FileNotFoundError as e:
         st.error(f"❌ File tidak ditemukan: {e}")
-        st.info("💡 Pastikan file berikut ada di folder yang sama dengan app.py:\n- data_stunting.csv\n- kecamatan_sidoarjo.geojson")
         st.stop()
     except Exception as e:
         st.error(f"❌ Error loading data: {e}")
@@ -114,7 +142,214 @@ def process_data(_df, _gdf):
     
     return merged
 
-# ==================== FOLIUM MAP ====================
+# ==================== AI INTELLIGENCE FUNCTIONS ====================
+
+def detect_anomalies(merged_gdf):
+    """Deteksi anomali dalam data"""
+    data_with_data = merged_gdf[merged_gdf["mean_stunting_percent"] > 0].copy()
+    
+    anomalies = []
+    
+    # 1. High percentage with low population
+    for _, row in data_with_data.iterrows():
+        if row["jumlah_balita"] < 50 and row["mean_stunting_percent"] > 30:
+            anomalies.append({
+                "type": "high_percent_low_pop",
+                "kecamatan": row["WADMKC"],
+                "detail": f"Stunting tinggi ({row['mean_stunting_percent']:.1f}%) dengan populasi kecil ({row['jumlah_balita']} balita)",
+                "severity": "high",
+                "reason": "Kemungkinan: Akses kesehatan terbatas atau faktor ekonomi lokal"
+            })
+    
+    # 2. Statistical outliers
+    mean_val = data_with_data["mean_stunting_percent"].mean()
+    std_val = data_with_data["mean_stunting_percent"].std()
+    
+    for _, row in data_with_data.iterrows():
+        z_score = (row["mean_stunting_percent"] - mean_val) / std_val
+        if abs(z_score) > 2:  # More than 2 std deviations
+            if z_score > 2:
+                anomalies.append({
+                    "type": "statistical_outlier_high",
+                    "kecamatan": row["WADMKC"],
+                    "detail": f"Persentase stunting jauh di atas rata-rata ({row['mean_stunting_percent']:.1f}% vs rata-rata {mean_val:.1f}%)",
+                    "severity": "high",
+                    "reason": "Memerlukan investigasi mendalam untuk identifikasi akar masalah"
+                })
+            elif z_score < -2:
+                anomalies.append({
+                    "type": "statistical_outlier_low",
+                    "kecamatan": row["WADMKC"],
+                    "detail": f"Persentase stunting sangat rendah ({row['mean_stunting_percent']:.1f}%)",
+                    "severity": "success",
+                    "reason": "Best practice yang bisa dipelajari kecamatan lain"
+                })
+    
+    # 3. Efficiency anomaly (high cases despite low percentage)
+    for _, row in data_with_data.iterrows():
+        if row["mean_stunting_percent"] < 20 and row["jumlah_stunting"] > 20:
+            anomalies.append({
+                "type": "high_volume",
+                "kecamatan": row["WADMKC"],
+                "detail": f"Meski persentase rendah ({row['mean_stunting_percent']:.1f}%), jumlah kasus tetap tinggi ({row['jumlah_stunting']} anak)",
+                "severity": "medium",
+                "reason": "Populasi besar memerlukan resources dan monitoring lebih intensif"
+            })
+    
+    return anomalies
+
+def generate_insights(merged_gdf, total_stunting, total_balita, avg_percent):
+    """Generate AI insights otomatis"""
+    data_with_data = merged_gdf[merged_gdf["mean_stunting_percent"] > 0].copy()
+    
+    insights = []
+    
+    # Overall performance insight
+    if avg_percent < 20:
+        insights.append({
+            "icon": "🎉",
+            "title": "Performa Kabupaten Baik",
+            "message": f"Rata-rata stunting {avg_percent:.1f}% berada di zona hijau (target <20%). Pertahankan program eksisting dan fokus pada pemerataan."
+        })
+    elif avg_percent < 30:
+        insights.append({
+            "icon": "⚠️",
+            "title": "Performa Kabupaten Perlu Perhatian",
+            "message": f"Rata-rata stunting {avg_percent:.1f}% di zona kuning. Perlu percepatan intervensi untuk mencapai target nasional 14%."
+        })
+    else:
+        insights.append({
+            "icon": "🚨",
+            "title": "Situasi Darurat Stunting",
+            "message": f"Rata-rata stunting {avg_percent:.1f}% di zona merah! Diperlukan intervensi masif dan alokasi resources signifikan."
+        })
+    
+    # Best and worst performers
+    best_kec = data_with_data.nsmallest(1, "mean_stunting_percent").iloc[0]
+    worst_kec = data_with_data.nlargest(1, "mean_stunting_percent").iloc[0]
+    
+    insights.append({
+        "icon": "🏆",
+        "title": "Kecamatan Terbaik",
+        "message": f"{best_kec['WADMKC']} dengan stunting hanya {best_kec['mean_stunting_percent']:.1f}% adalah role model. Dokumentasikan best practice mereka untuk replikasi."
+    })
+    
+    insights.append({
+        "icon": "🎯",
+        "title": "Kecamatan Prioritas Tertinggi",
+        "message": f"{worst_kec['WADMKC']} dengan stunting {worst_kec['mean_stunting_percent']:.1f}% ({worst_kec['jumlah_stunting']} kasus) memerlukan intervensi darurat segera."
+    })
+    
+    # Impact analysis
+    top3 = data_with_data.nlargest(3, "jumlah_stunting")
+    total_top3 = top3["jumlah_stunting"].sum()
+    impact_percent = (total_top3 / total_stunting * 100)
+    
+    insights.append({
+        "icon": "💡",
+        "title": "Quick Win Opportunity",
+        "message": f"3 kecamatan teratas ({', '.join(top3['WADMKC'].tolist())}) menyumbang {impact_percent:.1f}% total kasus. Fokus ke 3 kecamatan ini = impact maksimal!"
+    })
+    
+    # Variability insight
+    std_dev = data_with_data["mean_stunting_percent"].std()
+    if std_dev > 15:
+        insights.append({
+            "icon": "📊",
+            "title": "Ketimpangan Antar Wilayah Tinggi",
+            "message": f"Variasi stunting antar kecamatan sangat besar (std: {std_dev:.1f}). Strategi harus disesuaikan per wilayah, tidak bisa one-size-fits-all."
+        })
+    
+    return insights
+
+def generate_recommendations(merged_gdf, anomalies):
+    """Generate smart recommendations"""
+    data_with_data = merged_gdf[merged_gdf["mean_stunting_percent"] > 0].copy()
+    
+    recommendations = []
+    
+    # 1. Priority intervention
+    urgent_kec = data_with_data[data_with_data["mean_stunting_percent"] > 30].nlargest(3, "jumlah_stunting")
+    if len(urgent_kec) > 0:
+        recommendations.append({
+            "priority": "URGENT",
+            "category": "Intervensi Darurat",
+            "action": f"Deployment Tim Khusus ke {len(urgent_kec)} kecamatan terburuk",
+            "details": [
+                f"• {row['WADMKC']}: Alokasi {int(row['jumlah_stunting'] * 0.8)} paket bantuan pangan, 2 tenaga kesehatan tambahan"
+                for _, row in urgent_kec.iterrows()
+            ],
+            "timeline": "1-2 bulan",
+            "expected_impact": f"Potensi penurunan {urgent_kec['jumlah_stunting'].sum()} kasus ({(urgent_kec['jumlah_stunting'].sum()/data_with_data['jumlah_stunting'].sum()*100):.1f}% total)"
+        })
+    
+    # 2. Best practice replication
+    best_kec = data_with_data.nsmallest(1, "mean_stunting_percent").iloc[0]
+    recommendations.append({
+        "priority": "HIGH",
+        "category": "Replikasi Best Practice",
+        "action": f"Studi dan Adopsi Model {best_kec['WADMKC']}",
+        "details": [
+            f"• Investigasi faktor sukses di {best_kec['WADMKC']} (stunting: {best_kec['mean_stunting_percent']:.1f}%)",
+            "• Workshop sharing session dengan kecamatan lain",
+            "• Pilot project di 2-3 kecamatan terdekat",
+            "• Monitoring dan evaluasi selama 6 bulan"
+        ],
+        "timeline": "3-6 bulan",
+        "expected_impact": "Penurunan rata-rata 5-10% di kecamatan pilot"
+    })
+    
+    # 3. Resource optimization
+    high_pop = data_with_data[data_with_data["jumlah_balita"] > 100]
+    if len(high_pop) > 0:
+        recommendations.append({
+            "priority": "MEDIUM",
+            "category": "Optimasi Resources",
+            "action": "Penguatan Infrastruktur di Kecamatan Populasi Tinggi",
+            "details": [
+                f"• {row['WADMKC']}: Tambah 1 Posyandu, 3 kader terlatih, screening rutin"
+                for _, row in high_pop.head(3).iterrows()
+            ],
+            "timeline": "6-12 bulan",
+            "expected_impact": "Cakupan monitoring meningkat 30-40%"
+        })
+    
+    # 4. Anomaly-based recommendations
+    high_anomalies = [a for a in anomalies if a["severity"] == "high"]
+    if len(high_anomalies) > 0:
+        recommendations.append({
+            "priority": "HIGH",
+            "category": "Investigasi Anomali",
+            "action": "Tim Assessment untuk Kecamatan Anomali",
+            "details": [
+                f"• {a['kecamatan']}: {a['reason']}"
+                for a in high_anomalies[:3]
+            ],
+            "timeline": "1 bulan",
+            "expected_impact": "Identifikasi root cause spesifik per wilayah"
+        })
+    
+    # 5. Data quality
+    no_data_count = len(merged_gdf[merged_gdf["mean_stunting_percent"] == 0])
+    if no_data_count > 0:
+        no_data_kec = merged_gdf[merged_gdf["mean_stunting_percent"] == 0]["WADMKC"].tolist()
+        recommendations.append({
+            "priority": "MEDIUM",
+            "category": "Kualitas Data",
+            "action": f"Data Collection Campaign di {no_data_count} Kecamatan",
+            "details": [
+                f"• Kecamatan tanpa data: {', '.join(no_data_kec)}",
+                "• Deploy enumerator untuk screening door-to-door",
+                "• Target: 100% coverage dalam 2 bulan",
+                "• Setup sistem pelaporan digital"
+            ],
+            "timeline": "2 bulan",
+            "expected_impact": "Data lengkap 100% kecamatan untuk decision making akurat"
+        })
+    
+    return recommendations
+
+# ==================== VISUALIZATION FUNCTIONS (SAMA SEPERTI SEBELUMNYA) ====================
 def create_folium_map(merged_gdf):
     """Create interactive Folium map"""
     m = folium.Map(location=[-7.45, 112.7], zoom_start=11, tiles="OpenStreetMap")
@@ -175,286 +410,240 @@ def create_folium_map(merged_gdf):
     
     return m
 
-# ==================== BASIC CHARTS ====================
 def create_bar_chart(merged_gdf):
-    """Create bar chart of stunting by kecamatan"""
-    data_sorted = merged_gdf[merged_gdf["mean_stunting_percent"] > 0].sort_values(
-        "mean_stunting_percent", ascending=True
-    )
+    data_sorted = merged_gdf[merged_gdf["mean_stunting_percent"] > 0].sort_values("mean_stunting_percent", ascending=True)
     
     fig = go.Figure()
     fig.add_trace(go.Bar(
         y=data_sorted["WADMKC"],
         x=data_sorted["mean_stunting_percent"],
         orientation='h',
-        marker=dict(
-            color=data_sorted["mean_stunting_percent"],
-            colorscale='RdYlGn_r',
-            showscale=True,
-            colorbar=dict(title="Persentase (%)")
-        ),
+        marker=dict(color=data_sorted["mean_stunting_percent"], colorscale='RdYlGn_r', showscale=True, colorbar=dict(title="Persentase (%)")),
         text=data_sorted["mean_stunting_percent"].apply(lambda x: f"{x:.2f}%"),
         textposition='outside',
         hovertemplate='<b>%{y}</b><br>Persentase: %{x:.2f}%<extra></extra>'
     ))
     
-    fig.update_layout(
-        title="Persentase Stunting per Kecamatan",
-        xaxis_title="Persentase Stunting (%)",
-        yaxis_title="Kecamatan",
-        height=500,
-        margin=dict(l=20, r=20, t=40, b=20),
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)'
-    )
-    
+    fig.update_layout(title="Persentase Stunting per Kecamatan", xaxis_title="Persentase Stunting (%)", yaxis_title="Kecamatan",
+                      height=500, margin=dict(l=20, r=20, t=40, b=20), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
     return fig
 
 def create_pie_chart(merged_gdf):
-    """Create pie chart of category distribution"""
     data_with_data = merged_gdf[merged_gdf["mean_stunting_percent"] > 0]
     category_counts = data_with_data["category"].value_counts()
-    
-    colors_map = {
-        "Rendah": "#22c55e",
-        "Sedang": "#eab308",
-        "Tinggi": "#ef4444"
-    }
+    colors_map = {"Rendah": "#22c55e", "Sedang": "#eab308", "Tinggi": "#ef4444"}
     
     fig = go.Figure(data=[go.Pie(
-        labels=category_counts.index,
-        values=category_counts.values,
+        labels=category_counts.index, values=category_counts.values,
         marker=dict(colors=[colors_map.get(cat, "#94a3b8") for cat in category_counts.index]),
-        hole=0.4,
-        textinfo='label+percent',
-        textfont_size=14,
+        hole=0.4, textinfo='label+percent', textfont_size=14,
         hovertemplate='<b>%{label}</b><br>Jumlah: %{value}<br>Persentase: %{percent}<extra></extra>'
     )])
     
-    fig.update_layout(
-        title="Distribusi Kategori Stunting",
-        height=400,
-        margin=dict(l=20, r=20, t=40, b=20),
-        paper_bgcolor='rgba(0,0,0,0)'
-    )
-    
+    fig.update_layout(title="Distribusi Kategori Stunting", height=400, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)')
     return fig
 
-# ==================== NEW VISUALIZATIONS ====================
 def create_gauge_chart(avg_percent):
-    """Create gauge chart for average stunting percentage"""
     fig = go.Figure(go.Indicator(
-        mode="gauge+number+delta",
-        value=avg_percent,
-        domain={'x': [0, 1], 'y': [0, 1]},
+        mode="gauge+number+delta", value=avg_percent, domain={'x': [0, 1], 'y': [0, 1]},
         title={'text': "Rata-rata Stunting Kabupaten", 'font': {'size': 24}},
         delta={'reference': 20, 'suffix': "%"},
-        gauge={
-            'axis': {'range': [None, 50], 'tickwidth': 1, 'tickcolor': "darkblue"},
-            'bar': {'color': "darkblue"},
-            'bgcolor': "white",
-            'borderwidth': 2,
-            'bordercolor': "gray",
-            'steps': [
-                {'range': [0, 20], 'color': '#22c55e'},
-                {'range': [20, 30], 'color': '#eab308'},
-                {'range': [30, 50], 'color': '#ef4444'}
-            ],
-            'threshold': {
-                'line': {'color': "red", 'width': 4},
-                'thickness': 0.75,
-                'value': 30
-            }
-        }
+        gauge={'axis': {'range': [None, 50], 'tickwidth': 1, 'tickcolor': "darkblue"}, 'bar': {'color': "darkblue"},
+               'bgcolor': "white", 'borderwidth': 2, 'bordercolor': "gray",
+               'steps': [{'range': [0, 20], 'color': '#22c55e'}, {'range': [20, 30], 'color': '#eab308'}, {'range': [30, 50], 'color': '#ef4444'}],
+               'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 30}}
     ))
     
-    fig.update_layout(
-        height=400,
-        margin=dict(l=20, r=20, t=80, b=20),
-        paper_bgcolor='rgba(0,0,0,0)',
-        font={'color': "darkblue", 'family': "Arial"}
-    )
-    
+    fig.update_layout(height=400, margin=dict(l=20, r=20, t=80, b=20), paper_bgcolor='rgba(0,0,0,0)', font={'color': "darkblue", 'family': "Arial"})
     return fig
 
 def create_scatter_bubble(merged_gdf):
-    """Create scatter plot with bubble size"""
     data_with_data = merged_gdf[merged_gdf["mean_stunting_percent"] > 0].copy()
     
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=data_with_data["jumlah_balita"],
-        y=data_with_data["mean_stunting_percent"],
-        mode='markers+text',
-        marker=dict(
-            size=data_with_data["jumlah_stunting"]*2,
-            color=data_with_data["mean_stunting_percent"],
-            colorscale='RdYlGn_r',
-            showscale=True,
-            colorbar=dict(title="% Stunting"),
-            line=dict(width=2, color='white'),
-            opacity=0.8
-        ),
-        text=data_with_data["WADMKC"],
-        textposition="top center",
-        textfont=dict(size=10),
-        hovertemplate='<b>%{text}</b><br>' +
-                      'Jumlah Balita: %{x}<br>' +
-                      'Persentase Stunting: %{y:.2f}%<br>' +
-                      '<extra></extra>'
+        x=data_with_data["jumlah_balita"], y=data_with_data["mean_stunting_percent"], mode='markers+text',
+        marker=dict(size=data_with_data["jumlah_stunting"]*2, color=data_with_data["mean_stunting_percent"],
+                    colorscale='RdYlGn_r', showscale=True, colorbar=dict(title="% Stunting"),
+                    line=dict(width=2, color='white'), opacity=0.8),
+        text=data_with_data["WADMKC"], textposition="top center", textfont=dict(size=10),
+        hovertemplate='<b>%{text}</b><br>Jumlah Balita: %{x}<br>Persentase Stunting: %{y:.2f}%<br><extra></extra>'
     ))
     
-    fig.update_layout(
-        title="Analisis Korelasi: Jumlah Balita vs Persentase Stunting",
-        xaxis_title="Jumlah Balita",
-        yaxis_title="Persentase Stunting (%)",
-        height=500,
-        hovermode='closest',
-        plot_bgcolor='rgba(240,240,240,0.5)',
-        paper_bgcolor='rgba(0,0,0,0)'
-    )
+    fig.update_layout(title="Analisis Korelasi: Jumlah Balita vs Persentase Stunting",
+                      xaxis_title="Jumlah Balita", yaxis_title="Persentase Stunting (%)",
+                      height=500, hovermode='closest', plot_bgcolor='rgba(240,240,240,0.5)', paper_bgcolor='rgba(0,0,0,0)')
     
-    fig.add_hline(y=20, line_dash="dash", line_color="green", opacity=0.5, 
-                  annotation_text="Batas Rendah (20%)")
-    fig.add_hline(y=30, line_dash="dash", line_color="red", opacity=0.5,
-                  annotation_text="Batas Tinggi (30%)")
-    
+    fig.add_hline(y=20, line_dash="dash", line_color="green", opacity=0.5, annotation_text="Batas Rendah (20%)")
+    fig.add_hline(y=30, line_dash="dash", line_color="red", opacity=0.5, annotation_text="Batas Tinggi (30%)")
     return fig
 
 def create_treemap(merged_gdf):
-    """Create treemap visualization"""
     data_with_data = merged_gdf[merged_gdf["mean_stunting_percent"] > 0].copy()
-    
-    data_with_data["label"] = data_with_data.apply(
-        lambda row: f"{row['WADMKC']}<br>{row['mean_stunting_percent']:.1f}%", 
-        axis=1
-    )
+    data_with_data["label"] = data_with_data.apply(lambda row: f"{row['WADMKC']}<br>{row['mean_stunting_percent']:.1f}%", axis=1)
     
     fig = go.Figure(go.Treemap(
-        labels=data_with_data["label"],
-        parents=["Sidoarjo"] * len(data_with_data),
-        values=data_with_data["jumlah_balita"],
-        marker=dict(
-            colors=data_with_data["mean_stunting_percent"],
-            colorscale='RdYlGn_r',
-            showscale=True,
-            colorbar=dict(title="% Stunting"),
-            line=dict(width=2, color='white')
-        ),
-        text=data_with_data["jumlah_stunting"].apply(lambda x: f"{int(x)} kasus"),
-        textposition="middle center",
-        hovertemplate='<b>%{label}</b><br>' +
-                      'Jumlah Balita: %{value}<br>' +
-                      'Kasus: %{text}<br>' +
-                      '<extra></extra>'
+        labels=data_with_data["label"], parents=["Sidoarjo"] * len(data_with_data), values=data_with_data["jumlah_balita"],
+        marker=dict(colors=data_with_data["mean_stunting_percent"], colorscale='RdYlGn_r', showscale=True,
+                    colorbar=dict(title="% Stunting"), line=dict(width=2, color='white')),
+        text=data_with_data["jumlah_stunting"].apply(lambda x: f"{int(x)} kasus"), textposition="middle center",
+        hovertemplate='<b>%{label}</b><br>Jumlah Balita: %{value}<br>Kasus: %{text}<br><extra></extra>'
     ))
     
-    fig.update_layout(
-        title="Proporsi Balita per Kecamatan (Ukuran = Jumlah Balita, Warna = % Stunting)",
-        height=500,
-        margin=dict(l=10, r=10, t=50, b=10)
-    )
-    
+    fig.update_layout(title="Proporsi Balita per Kecamatan (Ukuran = Jumlah Balita, Warna = % Stunting)",
+                      height=500, margin=dict(l=10, r=10, t=50, b=10))
     return fig
 
 def create_radar_chart(merged_gdf):
-    """Create radar chart comparing top kecamatan"""
     top_kec = merged_gdf[merged_gdf["mean_stunting_percent"] > 0].nlargest(6, "mean_stunting_percent")
-    
     categories = ['Persentase<br>Stunting', 'Jumlah<br>Kasus', 'Jumlah<br>Balita']
     
     fig = go.Figure()
-    
     for _, row in top_kec.iterrows():
         percent_norm = row["mean_stunting_percent"] * 2
         kasus_norm = (row["jumlah_stunting"] / top_kec["jumlah_stunting"].max()) * 100
         balita_norm = (row["jumlah_balita"] / top_kec["jumlah_balita"].max()) * 100
         
         fig.add_trace(go.Scatterpolar(
-            r=[percent_norm, kasus_norm, balita_norm],
-            theta=categories,
-            fill='toself',
-            name=row["WADMKC"],
-            hovertemplate='<b>%{fullData.name}</b><br>' +
-                          '%{theta}: %{r:.1f}<br>' +
-                          '<extra></extra>'
+            r=[percent_norm, kasus_norm, balita_norm], theta=categories, fill='toself', name=row["WADMKC"],
+            hovertemplate='<b>%{fullData.name}</b><br>%{theta}: %{r:.1f}<br><extra></extra>'
         ))
     
-    fig.update_layout(
-        polar=dict(
-            radialaxis=dict(
-                visible=True,
-                range=[0, 100],
-                showticklabels=True,
-                ticks='outside'
-            )
-        ),
-        title="Perbandingan Multi-Dimensi: Top 6 Kecamatan",
-        height=500,
-        showlegend=True,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=-0.2,
-            xanchor="center",
-            x=0.5
-        )
-    )
-    
+    fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100], showticklabels=True, ticks='outside')),
+                      title="Perbandingan Multi-Dimensi: Top 6 Kecamatan", height=500, showlegend=True,
+                      legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
     return fig
 
 def create_box_plot(merged_gdf):
-    """Create box plot for distribution analysis"""
     data_with_data = merged_gdf[merged_gdf["mean_stunting_percent"] > 0]
     
     fig = go.Figure()
     fig.add_trace(go.Box(
-        y=data_with_data["mean_stunting_percent"],
-        name="Persentase Stunting",
-        marker_color='#6366f1',
-        boxmean='sd',
-        text=data_with_data["WADMKC"],
-        hovertemplate='<b>%{text}</b><br>' +
-                      'Persentase: %{y:.2f}%<br>' +
-                      '<extra></extra>'
+        y=data_with_data["mean_stunting_percent"], name="Persentase Stunting", marker_color='#6366f1',
+        boxmean='sd', text=data_with_data["WADMKC"],
+        hovertemplate='<b>%{text}</b><br>Persentase: %{y:.2f}%<br><extra></extra>'
     ))
     
-    fig.update_layout(
-        title="Distribusi Statistik Persentase Stunting",
-        yaxis_title="Persentase Stunting (%)",
-        height=500,
-        showlegend=False,
-        plot_bgcolor='rgba(240,240,240,0.5)',
-        paper_bgcolor='rgba(0,0,0,0)'
-    )
+    fig.update_layout(title="Distribusi Statistik Persentase Stunting", yaxis_title="Persentase Stunting (%)",
+                      height=500, showlegend=False, plot_bgcolor='rgba(240,240,240,0.5)', paper_bgcolor='rgba(0,0,0,0)')
     
-    fig.add_hline(y=20, line_dash="dash", line_color="green", opacity=0.5,
-                  annotation_text="Batas Rendah (20%)", annotation_position="right")
-    fig.add_hline(y=30, line_dash="dash", line_color="red", opacity=0.5,
-                  annotation_text="Batas Tinggi (30%)", annotation_position="right")
+    fig.add_hline(y=20, line_dash="dash", line_color="green", opacity=0.5, annotation_text="Batas Rendah (20%)", annotation_position="right")
+    fig.add_hline(y=30, line_dash="dash", line_color="red", opacity=0.5, annotation_text="Batas Tinggi (30%)", annotation_position="right")
     
     mean_val = data_with_data["mean_stunting_percent"].mean()
     median_val = data_with_data["mean_stunting_percent"].median()
     
-    fig.add_annotation(
-        text=f"Mean: {mean_val:.2f}%<br>Median: {median_val:.2f}%",
-        xref="paper", yref="paper",
-        x=0.02, y=0.98,
-        showarrow=False,
-        bgcolor="white",
-        bordercolor="gray",
-        borderwidth=1,
-        font=dict(size=12)
-    )
-    
+    fig.add_annotation(text=f"Mean: {mean_val:.2f}%<br>Median: {median_val:.2f}%", xref="paper", yref="paper",
+                       x=0.02, y=0.98, showarrow=False, bgcolor="white", bordercolor="gray", borderwidth=1, font=dict(size=12))
     return fig
+
+# ==================== DISPLAY FUNCTIONS FOR AI FEATURES ====================
+def display_insights(insights):
+    """Display AI insights dengan styling"""
+    st.markdown("### 🧠 AI-Generated Insights")
+    
+    for insight in insights:
+        st.markdown(f"""
+        <div class="insight-box">
+            <h3 style="margin: 0 0 0.5rem 0;">{insight['icon']} {insight['title']}</h3>
+            <p style="margin: 0; font-size: 1.1rem;">{insight['message']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+def display_anomalies(anomalies):
+    """Display detected anomalies"""
+    st.markdown("### 🔍 Anomaly Detection")
+    
+    if not anomalies:
+        st.markdown("""
+        <div class="success-box">
+            <h4 style="margin: 0 0 0.5rem 0;">✅ Tidak Ada Anomali Terdeteksi</h4>
+            <p style="margin: 0;">Data menunjukkan pola yang konsisten tanpa outlier signifikan.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        return
+    
+    high_severity = [a for a in anomalies if a["severity"] == "high"]
+    success_cases = [a for a in anomalies if a["severity"] == "success"]
+    medium_severity = [a for a in anomalies if a["severity"] == "medium"]
+    
+    if high_severity:
+        st.markdown("#### ⚠️ Anomali Kritis")
+        for anomaly in high_severity:
+            st.markdown(f"""
+            <div class="anomaly-box">
+                <h4 style="margin: 0 0 0.5rem 0;">🚨 {anomaly['kecamatan']}</h4>
+                <p style="margin: 0 0 0.3rem 0;"><b>{anomaly['detail']}</b></p>
+                <p style="margin: 0; font-size: 0.9rem; color: #dc2626;"><i>Analisis: {anomaly['reason']}</i></p>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    if medium_severity:
+        st.markdown("#### 📊 Anomali Perlu Perhatian")
+        for anomaly in medium_severity:
+            st.markdown(f"""
+            <div class="recommendation-box">
+                <h4 style="margin: 0 0 0.5rem 0;">📍 {anomaly['kecamatan']}</h4>
+                <p style="margin: 0 0 0.3rem 0;">{anomaly['detail']}</p>
+                <p style="margin: 0; font-size: 0.9rem; color: #2563eb;"><i>Analisis: {anomaly['reason']}</i></p>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    if success_cases:
+        st.markdown("#### ✨ Best Practice Teridentifikasi")
+        for anomaly in success_cases:
+            st.markdown(f"""
+            <div class="success-box">
+                <h4 style="margin: 0 0 0.5rem 0;">🏆 {anomaly['kecamatan']}</h4>
+                <p style="margin: 0 0 0.3rem 0;">{anomaly['detail']}</p>
+                <p style="margin: 0; font-size: 0.9rem; color: #16a34a;"><i>Rekomendasi: {anomaly['reason']}</i></p>
+            </div>
+            """, unsafe_allow_html=True)
+
+def display_recommendations(recommendations):
+    """Display smart recommendations"""
+    st.markdown("### 💡 Smart Recommendations")
+    
+    priority_colors = {
+        "URGENT": "#ef4444",
+        "HIGH": "#f97316",
+        "MEDIUM": "#eab308",
+        "LOW": "#22c55e"
+    }
+    
+    for rec in recommendations:
+        color = priority_colors.get(rec["priority"], "#6b7280")
+        
+        st.markdown(f"""
+        <div style="background: white; border-left: 4px solid {color}; padding: 1.5rem; border-radius: 0.5rem; margin: 1rem 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h3 style="margin: 0; color: {color};">🎯 {rec['action']}</h3>
+                <span style="background: {color}; color: white; padding: 0.3rem 0.8rem; border-radius: 1rem; font-size: 0.85rem; font-weight: bold;">
+                    {rec['priority']}
+                </span>
+            </div>
+            <p style="margin: 0 0 0.5rem 0; color: #6b7280; font-weight: 600;">📂 {rec['category']}</p>
+            <div style="margin: 1rem 0;">
+                <p style="margin: 0 0 0.5rem 0; font-weight: 600;">Detail Action Items:</p>
+                {''.join([f'<p style="margin: 0.2rem 0; padding-left: 1rem;">{detail}</p>' for detail in rec['details']])}
+            </div>
+            <div style="display: flex; gap: 2rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
+                <div>
+                    <span style="font-weight: 600; color: #6b7280;">⏱️ Timeline:</span> {rec['timeline']}
+                </div>
+                <div>
+                    <span style="font-weight: 600; color: #6b7280;">📈 Expected Impact:</span> {rec['expected_impact']}
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
 # ==================== MAIN APP ====================
 def main():
     st.markdown('<div class="main-header">🗺️ Sistem Informasi Stunting</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Kabupaten Sidoarjo - Jawa Timur</div>', unsafe_allow_html=True)
     
-    with st.spinner("⏳ Memuat data..."):
+    with st.spinner("⏳ Memuat data dan menganalisis..."):
         df, gdf = load_data()
         merged_gdf = process_data(df, gdf)
     
@@ -464,27 +653,21 @@ def main():
     total_stunting = int(merged_gdf["jumlah_stunting"].sum())
     avg_percent = (total_stunting / total_balita * 100) if total_balita > 0 else 0
     
+    # Generate AI insights
+    insights = generate_insights(merged_gdf, total_stunting, total_balita, avg_percent)
+    anomalies = detect_anomalies(merged_gdf)
+    recommendations = generate_recommendations(merged_gdf, anomalies)
+    
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric(
-            label="📍 Total Kecamatan",
-            value=f"{total_kecamatan}",
-            delta=f"{kec_with_data} ada data"
-        )
+        st.metric(label="📍 Total Kecamatan", value=f"{total_kecamatan}", delta=f"{kec_with_data} ada data")
     
     with col2:
-        st.metric(
-            label="⚠️ Kasus Stunting",
-            value=f"{total_stunting:,}",
-            delta=f"{avg_percent:.2f}%"
-        )
+        st.metric(label="⚠️ Kasus Stunting", value=f"{total_stunting:,}", delta=f"{avg_percent:.2f}%")
     
     with col3:
-        st.metric(
-            label="👶 Total Balita",
-            value=f"{total_balita:,}"
-        )
+        st.metric(label="👶 Total Balita", value=f"{total_balita:,}")
     
     with col4:
         data_with_categories = merged_gdf[merged_gdf["mean_stunting_percent"] > 0]
@@ -492,10 +675,22 @@ def main():
             kategori_tertinggi = data_with_categories["category"].value_counts().idxmax()
         else:
             kategori_tertinggi = "N/A"
-        st.metric(
-            label="🏷️ Kategori Dominan",
-            value=kategori_tertinggi
-        )
+        st.metric(label="🏷️ Kategori Dominan", value=kategori_tertinggi)
+    
+    st.markdown("---")
+    
+    # Display AI Insights at top
+    with st.expander("🧠 AI Insights & Recommendations - Klik untuk expand", expanded=True):
+        col_insight, col_anomaly = st.columns(2)
+        
+        with col_insight:
+            display_insights(insights)
+        
+        with col_anomaly:
+            display_anomalies(anomalies)
+        
+        st.markdown("---")
+        display_recommendations(recommendations)
     
     st.markdown("---")
     
@@ -503,6 +698,9 @@ def main():
     
     with tab1:
         st.subheader("Peta Stunting Kabupaten Sidoarjo")
+        
+        # AI Insight for map tab
+        st.info("💡 **Smart Insight:** Klik pada area kecamatan di peta untuk melihat detail. Area berwarna merah menunjukkan tingkat stunting tinggi yang memerlukan prioritas intervensi.")
         
         col_map, col_legend = st.columns([3, 1])
         
@@ -549,6 +747,19 @@ def main():
     
     with tab2:
         st.subheader("📊 Analisis Data Stunting Komprehensif")
+        
+        # AI Insight for analysis tab
+        data_with_data = merged_gdf[merged_gdf["mean_stunting_percent"] > 0]
+        correlation = data_with_data[["jumlah_balita", "mean_stunting_percent"]].corr().iloc[0, 1]
+        
+        if abs(correlation) < 0.3:
+            corr_insight = "Tidak ada korelasi linear yang kuat antara jumlah balita dan persentase stunting. Faktor lain seperti akses kesehatan, ekonomi, dan edukasi lebih berpengaruh."
+        elif correlation > 0:
+            corr_insight = f"Terdapat korelasi positif (r={correlation:.2f}). Kecamatan dengan populasi balita lebih besar cenderung memiliki persentase stunting lebih tinggi."
+        else:
+            corr_insight = f"Terdapat korelasi negatif (r={correlation:.2f}). Kecamatan dengan populasi balita lebih besar justru memiliki persentase stunting lebih rendah."
+        
+        st.info(f"💡 **Smart Insight:** {corr_insight}")
         
         st.markdown("### 🎯 Indikator Rata-rata Kabupaten")
         st.plotly_chart(create_gauge_chart(avg_percent), use_container_width=True)
@@ -622,6 +833,8 @@ def main():
     with tab3:
         st.subheader("Data Lengkap per Kecamatan")
         
+        st.info("💡 **Smart Insight:** Gunakan fitur download untuk analisis lebih lanjut di Excel/Python. Data diurutkan berdasarkan persentase stunting tertinggi.")
+        
         display_df = merged_gdf[["WADMKC", "jumlah_balita", "jumlah_stunting", "mean_stunting_percent", "category", "rank"]].copy()
         display_df.columns = ["Kecamatan", "Jumlah Balita", "Jumlah Stunting", "Persentase (%)", "Kategori", "Ranking"]
         display_df = display_df.sort_values("Persentase (%)", ascending=False).reset_index(drop=True)
@@ -631,12 +844,7 @@ def main():
         display_df["Ranking"] = display_df["Ranking"].astype(int)
         display_df["Ranking"] = display_df["Ranking"].apply(lambda x: f"#{x}" if x > 0 else "-")
         
-        st.dataframe(
-            display_df,
-            hide_index=True,
-            use_container_width=True,
-            height=600
-        )
+        st.dataframe(display_df, hide_index=True, use_container_width=True, height=600)
         
         csv = display_df.to_csv(index=False).encode('utf-8')
         st.download_button(
@@ -650,7 +858,7 @@ def main():
     st.markdown(
         "<div style='text-align: center; color: #64748b; padding: 1rem;'>"
         "© 2025 Sistem Informasi Stunting Kabupaten Sidoarjo | "
-        "Data visualisasi untuk monitoring kesehatan balita"
+        "Powered by AI Insights & Data Analytics"
         "</div>",
         unsafe_allow_html=True
     )
